@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 // --- FIREBASE CONFIGURATION ---
+// These are your specific keys from the screenshot you sent
 const firebaseConfig = {
   apiKey: "AIzaSyBeHLGmFOEzwCIalqG42T9QiC8B8Z0wQp0",
   authDomain: "picnic2k26.firebaseapp.com",
@@ -31,9 +32,9 @@ const firebaseConfig = {
   measurementId: "G-4SL9F6529D"
 };
 
-// Initialize Firebase (Safe check for valid config)
-const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
-const db = app ? getFirestore(app) : null;
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 const PicnicApp = () => {
   // --- State ---
@@ -167,7 +168,10 @@ const PicnicApp = () => {
       });
       setExpenseForm({ desc: '', amount: '' });
       setToast({ message: "Expense added!", type: 'success' });
-    } catch (e) { setToast({ message: "Error adding expense", type: 'error' }); }
+    } catch (e) { 
+      console.error(e);
+      setToast({ message: "Error adding expense", type: 'error' }); 
+    }
   };
 
   const removeExpense = (id) => {
@@ -191,7 +195,10 @@ const PicnicApp = () => {
       });
       setParticipantForm({ name: '', amount: '', mode: 'online', count: 1 });
       setToast({ message: "Participant added!", type: 'success' });
-    } catch (e) { setToast({ message: "Error adding participant", type: 'error' }); }
+    } catch (e) { 
+      console.error(e);
+      setToast({ message: "Error adding participant", type: 'error' }); 
+    }
   };
 
   const removeParticipant = (id) => {
@@ -286,8 +293,6 @@ const PicnicApp = () => {
     navigator.clipboard.writeText(window.location.href);
     setToast({ message: "Link copied! Send to friends.", type: 'success' });
   };
-
-  if (!db) return <div className="p-10 text-center">⚠️ Firebase Config Missing. Please check App.jsx</div>;
 
   // --- Render ---
   return (
