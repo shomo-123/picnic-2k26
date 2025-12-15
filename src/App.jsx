@@ -16,7 +16,7 @@ import {
   Wallet, Users, Receipt, Plus, Trash2, CreditCard, Banknote, 
   Calculator, RotateCcw, CheckCircle2, Sparkles, TrendingUp, 
   ArrowRight, Share2, LayoutDashboard, MessageCircle, Edit2, 
-  Save, X, UserPlus, Lock, Link as LinkIcon
+  Save, X, UserPlus, Lock, Link as LinkIcon, Bell
 } from 'lucide-react';
 
 // --- FIREBASE CONFIGURATION ---
@@ -46,8 +46,8 @@ const PicnicApp = () => {
   const [fixedRate, setFixedRate] = useState(0);
 
   // Forms & UI State
-  const [expenseForm, setExpenseForm] = useState({ desc: '', amount: '' });
-  const [participantForm, setParticipantForm] = useState({ name: '', amount: '', mode: 'online', count: 1 });
+  const [expenseForm, setExpenseForm] = useState({ desc: '', amount: '', notify: true });
+  const [participantForm, setParticipantForm] = useState({ name: '', amount: '', mode: 'online', count: 1, notify: true });
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [securityCode, setSecurityCode] = useState('');
   const [securityError, setSecurityError] = useState('');
@@ -155,7 +155,14 @@ const PicnicApp = () => {
     }
   };
 
-  // --- Database Ops ---
+  // --- Database Ops & Notifications ---
+  const sendWhatsAppNotification = (text) => {
+    // Uses the WhatsApp Click to Chat API. 
+    // This will open WhatsApp. The user then selects the group to send to.
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
   const updateSettings = async (updates) => {
     try { await setDoc(doc(db, "picnics", roomId), updates, { merge: true }); } catch (e) { console.error(e); }
   };
@@ -169,8 +176,15 @@ const PicnicApp = () => {
         amount: parseFloat(expenseForm.amount),
         createdAt: Date.now()
       });
-      setExpenseForm({ desc: '', amount: '' });
-      setToast({ message: "Expense saved to cloud!", type: 'success' });
+      
+      // WhatsApp Notification for Expense
+      if (expenseForm.notify) {
+        const msg = `💸 *New Expense: ${expenseForm.desc}*\n💵 Cost: ₹${parseFloat(expenseForm.amount).toLocaleString()}\n\n_Added via Picnic 2K26_`;
+        sendWhatsAppNotification(msg);
+      }
+
+      setExpenseForm({ desc: '', amount: '', notify: true });
+      setToast({ message: "Expense saved!", type: 'success' });
     } catch (e) { setToast({ message: "Error saving", type: 'error' }); }
   };
 
@@ -182,15 +196,37 @@ const PicnicApp = () => {
     e.preventDefault();
     if (!participantForm.name) return;
     try {
+      const pAmount = parseFloat(participantForm.amount) || 0;
+      const pCount = parseInt(participantForm.count) || 1;
+
       await addDoc(collection(db, "picnics", roomId, "participants"), {
         name: participantForm.name,
-        amount: parseFloat(participantForm.amount) || 0,
+        amount: pAmount,
         mode: participantForm.mode,
-        count: parseInt(participantForm.count) || 1,
+        count: pCount,
         createdAt: Date.now()
       });
-      setParticipantForm({ name: '', amount: '', mode: 'online', count: 1 });
-      setToast({ message: "Participant saved to cloud!", type: 'success' });
+
+      // WhatsApp Notification for Payment
+      if (participantForm.notify) {
+        // Calculate rough due amount based on CURRENT stats (approximate)
+        // Note: This uses the state BEFORE this insertion updates, so we adjust slightly for accuracy
+        const estimatedTotalHeads = totalHeadCount + pCount;
+        const estimatedCostPerHead = totalExpenses / (estimatedTotalHeads || 1);
+        const targetAmount = (calculationMode === 'fixed' ? fixedRate : estimatedCostPerHead) * pCount;
+        const due = targetAmount - pAmount;
+        
+        let dueText = "";
+        if (due > 1) dueText = `📉 Due: ₹${due.toFixed(0)}`;
+        else if (due < -1) dueText = `💰 Refund: ₹${Math.abs(due).toFixed(0)}`;
+        else dueText = `✅ Settled`;
+
+        const msg = `📢 *Payment Received*\n👤 Name: ${participantForm.name}\n💰 Paid: ₹${pAmount.toLocaleString()} (${participantForm.mode})\n${dueText}\n\n_Added via Picnic 2K26_`;
+        sendWhatsAppNotification(msg);
+      }
+
+      setParticipantForm({ name: '', amount: '', mode: 'online', count: 1, notify: true });
+      setToast({ message: "Participant saved!", type: 'success' });
     } catch (e) { setToast({ message: "Error saving", type: 'error' }); }
   };
 
@@ -352,10 +388,24 @@ const PicnicApp = () => {
             <div className="bg-white rounded-3xl shadow-lg border border-slate-100 overflow-hidden flex flex-col h-[65vh] lg:h-[500px]">
               <div className="p-5 border-b border-slate-100 bg-slate-50/50">
                 <h2 className="text-lg font-bold text-slate-800 mb-3">Expenses <span className="text-xs bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full ml-2">{expenses.length}</span></h2>
-                <form onSubmit={addExpense} className="flex gap-2">
-                  <input type="text" placeholder="Item" value={expenseForm.desc} onChange={e => setExpenseForm({...expenseForm, desc: e.target.value})} className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold" />
-                  <input type="number" placeholder="0" value={expenseForm.amount} onChange={e => setExpenseForm({...expenseForm, amount: e.target.value})} className="w-20 bg-white border border-slate-200 rounded-xl px-2 py-2 text-center text-sm font-bold" />
-                  <button type="submit" className="bg-rose-500 text-white p-2.5 rounded-xl shadow-lg active:scale-90"><Plus className="w-5 h-5" /></button>
+                <form onSubmit={addExpense} className="space-y-2">
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Item" value={expenseForm.desc} onChange={e => setExpenseForm({...expenseForm, desc: e.target.value})} className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold" />
+                    <input type="number" placeholder="0" value={expenseForm.amount} onChange={e => setExpenseForm({...expenseForm, amount: e.target.value})} className="w-20 bg-white border border-slate-200 rounded-xl px-2 py-2 text-center text-sm font-bold" />
+                    <button type="submit" className="bg-rose-500 text-white p-2.5 rounded-xl shadow-lg active:scale-90"><Plus className="w-5 h-5" /></button>
+                  </div>
+                  {/* Notify Checkbox */}
+                  <div className="flex justify-end">
+                    <label className="flex items-center gap-2 cursor-pointer bg-white px-2 py-1 rounded-lg border border-slate-100 shadow-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={expenseForm.notify} 
+                        onChange={(e) => setExpenseForm({...expenseForm, notify: e.target.checked})} 
+                        className="w-3.5 h-3.5 accent-emerald-500"
+                      />
+                      <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1"><Bell className="w-3 h-3" /> Notify Group</span>
+                    </label>
+                  </div>
                 </form>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -401,6 +451,18 @@ const PicnicApp = () => {
                       <button type="button" onClick={() => setParticipantForm({...participantForm, mode: 'cash'})} className={`flex-1 py-1.5 rounded-lg text-xs font-bold ${participantForm.mode === 'cash' ? 'bg-white shadow text-emerald-600' : 'text-slate-400'}`}>Cash</button>
                     </div>
                     <button type="submit" className="bg-indigo-600 text-white px-4 rounded-xl shadow-lg active:scale-90"><ArrowRight className="w-5 h-5" /></button>
+                  </div>
+                  {/* Notify Checkbox */}
+                  <div className="flex justify-end">
+                    <label className="flex items-center gap-2 cursor-pointer bg-white px-2 py-1 rounded-lg border border-slate-100 shadow-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={participantForm.notify} 
+                        onChange={(e) => setParticipantForm({...participantForm, notify: e.target.checked})} 
+                        className="w-3.5 h-3.5 accent-emerald-500"
+                      />
+                      <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1"><Bell className="w-3 h-3" /> Notify Group</span>
+                    </label>
                   </div>
                 </form>
               </div>
