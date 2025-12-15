@@ -58,35 +58,45 @@ const PicnicApp = () => {
   const [editFormData, setEditFormData] = useState({});
   const [toast, setToast] = useState(null);
 
-  // --- 1. SMART INITIALIZATION (Fixes data loss) ---
+  // --- 1. INITIALIZATION & PERSISTENCE (FIXED) ---
   useEffect(() => {
+    // 1. Try to get room from URL
     const params = new URLSearchParams(window.location.search);
     let id = params.get('room');
 
-    // If no room in URL, try to find the last visited room in LocalStorage
+    // 2. If not in URL, try to get from Local Storage (Previous session)
     if (!id) {
       id = localStorage.getItem('picnic_last_room_id');
     }
 
-    // If still no room (First time ever), generate a new one
+    // 3. If neither, create a NEW room
     if (!id) {
       id = 'trip-' + Math.random().toString(36).substring(2, 8);
     }
 
-    // Save this room ID so we return to it next time
-    localStorage.setItem('picnic_last_room_id', id);
     setRoomId(id);
-
-    // Update the browser URL bar so it can be copied
-    if (!params.get('room')) {
-      try {
-        const newUrl = `${window.location.pathname}?room=${id}`;
-        window.history.replaceState({ path: newUrl }, '', newUrl);
-      } catch (e) { /* Ignore */ }
-    }
   }, []);
 
-  // --- 2. CLOUD SYNC ---
+  // --- 2. SAVE ROOM ID ON CHANGE (Crucial Fix) ---
+  useEffect(() => {
+    if (roomId) {
+      // Always save the current room to storage so we return to it
+      localStorage.setItem('picnic_last_room_id', roomId);
+      
+      // Ensure URL matches
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('room') !== roomId) {
+          url.searchParams.set('room', roomId);
+          window.history.replaceState(null, '', url.toString());
+        }
+      } catch (e) {
+        // Ignore errors in sandboxed environments like previews
+      }
+    }
+  }, [roomId]);
+
+  // --- 3. CLOUD SYNC ---
   useEffect(() => {
     if (!roomId || !db) return;
     setLoading(true);
@@ -207,9 +217,20 @@ const PicnicApp = () => {
     if(window.confirm("Start a NEW picnic? This creates a fresh room.")) {
       const newId = 'trip-' + Math.random().toString(36).substring(2, 8);
       localStorage.setItem('picnic_last_room_id', newId); // Save new room
+      // Force reload to pick up new room ID cleanly
       window.location.href = `?room=${newId}`;
     }
   });
+
+  const switchRoom = () => {
+    const newRoom = prompt("Enter Room ID to join (e.g. trip-xyz):");
+    if (newRoom && newRoom.startsWith('trip-')) {
+      setRoomId(newRoom);
+      setToast({ message: "Joined Room!", type: 'success' });
+    } else if (newRoom) {
+      setToast({ message: "Invalid Room ID", type: 'error' });
+    }
+  };
 
   const changeCalculationMode = (mode) => {
     if (calculationMode === mode) return;
@@ -264,6 +285,7 @@ const PicnicApp = () => {
   return (
     <div className="min-h-screen bg-[#F0F4F8] font-sans text-slate-800 pb-24 lg:pb-10 overflow-x-hidden">
       <div className="fixed top-0 left-0 w-full h-[30vh] lg:h-96 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 rounded-b-[40px] shadow-2xl z-0" />
+      
       <div className="relative z-10 max-w-6xl mx-auto px-4 pt-6 lg:pt-8">
         
         {/* Header */}
@@ -273,7 +295,7 @@ const PicnicApp = () => {
             <div>
               <h1 className="text-2xl font-black tracking-tight">Picnic 2K26</h1>
               <div className="flex items-center gap-2">
-                <span className="text-indigo-100 text-xs font-mono bg-white/10 px-2 py-0.5 rounded">Room: {roomId?.split('-')[1]}</span>
+                <span className="text-indigo-100 text-xs font-mono bg-white/10 px-2 py-0.5 rounded cursor-pointer hover:bg-white/20" onClick={switchRoom} title="Click to Switch Room">Room: {roomId?.split('-')[1]}</span>
                 <button onClick={handleCopyLink} className="bg-white/20 px-2 py-0.5 rounded text-[10px] hover:bg-white/30 font-bold flex items-center gap-1"><LinkIcon className="w-3 h-3"/> Copy</button>
               </div>
             </div>
@@ -348,7 +370,7 @@ const PicnicApp = () => {
                       </div>
                     ) : (
                       <>
-                        <div className="flex items-center gap-3"><Receipt className="w-4 h-4 text-rose-500" /><span className="font-bold text-slate-700 text-sm">{exp.desc}</span></div>
+                        <div className="flex items-center gap-3"><Receipt className="w-4 h-4 text-rose-500" /><span className="font-bold text-slate-700 text-sm">{String(exp.desc)}</span></div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-sm">₹{exp.amount}</span>
                           <button onClick={() => requestVerification(() => { setEditingType('expense'); setEditingId(exp.id); setEditFormData({...exp}); })}><Edit2 className="w-3.5 h-3.5 text-slate-300 hover:text-indigo-500" /></button>
@@ -402,8 +424,8 @@ const PicnicApp = () => {
                             <div className="flex items-center gap-3">
                               <span className="text-slate-400 text-xs font-mono w-4">{i + 1}.</span>
                               <div>
-                                <div className="flex items-center gap-2"><h3 className="font-bold text-slate-800 text-sm">{p.name}</h3>{(p.count > 1) && <span className="bg-purple-100 text-purple-700 text-[9px] px-1.5 rounded-full font-bold flex items-center"><Users className="w-2.5 h-2.5 mr-1" />{p.count}</span>}</div>
-                                <div className="flex items-center gap-2 mt-0.5"><span className="text-[9px] uppercase border px-1 rounded font-bold text-slate-500">{p.mode}</span><span className="text-[10px] text-slate-400 font-medium">Paid: ₹{p.amount}</span></div>
+                                <div className="flex items-center gap-2"><h3 className="font-bold text-slate-800 text-sm">{String(p.name)}</h3>{(p.count > 1) && <span className="bg-purple-100 text-purple-700 text-[9px] px-1.5 rounded-full font-bold flex items-center"><Users className="w-2.5 h-2.5 mr-1" />{p.count}</span>}</div>
+                                <div className="flex items-center gap-2 mt-0.5"><span className="text-[9px] uppercase border px-1 rounded font-bold text-slate-500">{String(p.mode)}</span><span className="text-[10px] text-slate-400 font-medium">Paid: ₹{p.amount}</span></div>
                               </div>
                             </div>
                             <div className="flex flex-col items-end gap-1.5">
